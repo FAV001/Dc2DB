@@ -1,10 +1,14 @@
-"""import fdb"""
+#import fdb
 import firebirdsql as fdb
 from configobj import ConfigObj
 import datetime
 import time
+import logging
+import csv
 
 """читаем конфиг"""
+cur_date = datetime.date.today()
+s_cur_date = cur_date.strftime("%d.%m.%Y")
 
 config = ConfigObj('call.cfg')
 server = config['ServerDB']['ServerName']
@@ -12,18 +16,22 @@ db_stat = config['ServerDB']['DB_Stat']
 db_ib = config['ServerDB']['DB_IB']
 user = config['ServerDB']['user']
 userpass = config['ServerDB']['pass']
-#lot = ', '.join(config['WorkConfig']['Lot'])
 list_lot = config['WorkConfig']['Lot']
+procent = float(config['WorkConfig']['Procent'])
+LogFile = config['WorkConfig']['LogName'] + cur_date.strftime("%d-%m-%Y") + ".log"
+logging.basicConfig(format = u'[LINE:%(lineno)3d]# %(levelname)-8s [%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level = logging.DEBUG, filename = LogFile)
+#logging.basicConfig(format = u'[LINE:%(lineno)3d]# %(levelname)-8s [%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level = logging.INFO, filename = LogFile)
+logging.info( u'Запустили скрипт' )
 s_Lot = ""
 i = 1
-cur_date = datetime.date.today()
 #cur_time = time.strptime(time.strftime("%H:%M:%S", time.localtime()), "%H:%M:%S")
 #cur_time = time.time() - 60*5
 cur_time = time.strptime(time.strftime("%H:%M:%S", time.localtime(time.time() - 60*5)), "%H:%M:%S")
+logging.info(u'Текущий временной интервал : ' + str(cur_time.tm_hour) + ":" + str(cur_time.tm_min))
 time5 = datetime.timedelta(minutes=5)
 time0 = datetime.timedelta(minutes=0)
-print("current date ",cur_date)
-print("current time ",cur_time)
+#print("current date ",cur_date)
+#print("current time ",cur_time)
 len_lot = len(list_lot)
 for single_lot in list_lot:
     if i !=len_lot:
@@ -36,12 +44,13 @@ for single_lot in list_lot:
     
 #s_Lot = "'" + str(list_lot[0]) + "'"
 lot = ', '.join(map(str,config['WorkConfig']['Lot']))
-
+logging.info( u'Соединяемся с базой...' )
 con_stat = fdb.connect(host=server, database=db_stat, user=user, password=userpass)
 con_ib = fdb.connect(host=server, database=db_ib, user=user, password=userpass)
 cur_stat = con_stat.cursor()
 cur_ib = con_ib.cursor()
-myquery = "select * from PHONES where LOT_NUMB in (%s)" % s_Lot
+#myquery = "select * from PHONES where LOT_NUMB in (%s)" % s_Lot
+#Select = "Select * from PHONES where LOT_NUMB in (?) order by phone_id"
 Select = "Select * from PHONES where LOT_NUMB in (%s) order by phone_id" % s_Lot
 
 def create_time_struct(hex1,hex2):
@@ -53,41 +62,107 @@ def create_time_string(time_struct):
 def convertfromtimetodatetime(time_struct):
     return datetime.datetime(time_struct[0], time_struct[1], time_struct[2], time_struct[3], time_struct[4], time_struct[5])
 
+def checktaksofonotzvon(phone_id):
+    #con_stat1 = fdb.connect(host=server, database=db_stat, user=user, password=userpass)
+    #cur_stat1 = con_stat1.cursor()
+    sql = "select * from allfails where phone_id = %s and (DATE_TIME > '%s 00:00' and DATE_TIME < '%s 23:59') and ((fail_code in (0,32,128)) and (fail_code not in (1,2,4)))" % (phone_id, s_cur_date, s_cur_date)
+    with cur_stat.execute(sql):
+        cur_stat.fetchone()
+        logging.debug('phone_id - %4s, count - %s' % (phone_id, cur_stat.rowcount))
+        if cur_stat.rowcount > 0:
+            return 1
+        else:
+            return 0
+
+def codotzvona(phone_id):
+    sql = "select * from allfails where phone_id = %s and (DATE_TIME > '%s 00:00' and DATE_TIME < '%s 23:59') and ((fail_code in (0,32,128)) and (fail_code not in (1,2,4)))" % (phone_id, s_cur_date, s_cur_date)       
+    with cur_stat.execute(sql):
+        r = cur_stat.fetchone()
+        if r != None:
+            logging.debug('Код отзвона - %s' % r[2])
+            return r[2]
+        else:
+            return 1009
+        
+
+def current_count():
+    con_ib1 = fdb.connect(host=server, database=db_ib, user=user, password=userpass)
+    cur_ib1 = con_ib1.cursor()
+    sql = "Select phone_id from PHONES where LOT_NUMB in (%s) order by phone_id" % s_Lot
+    with cur_ib1.execute(sql):
+        row = cur_ib1.fetchone()
+        count_current_otzvon = 0
+        while row:
+            var = checktaksofonotzvon(row[0])
+            count_current_otzvon = count_current_otzvon + var
+            row = cur_ib1.fetchone()
+    con_ib1.close()
+    return count_current_otzvon
+
+
 cur_time_d = convertfromtimetodatetime(cur_time)
+count_current_otzvon = current_count()
+logging.info( "Количество отзвонившихся таксофонов : " + str(count_current_otzvon))
 with cur_ib.execute(Select):
     row = cur_ib.fetchone()
-    print(cur_ib.rowcount)
-    i = 1
-    while row:
-        time_hex = row[16]
-        end_time1 = create_time_struct(time_hex[3],time_hex[4])
-        end_time2 = create_time_struct(time_hex[9],time_hex[10])
-        end_time3 = create_time_struct(time_hex[15],time_hex[16])
-        end_time4 = create_time_struct(time_hex[21],time_hex[22])
-        p1 = convertfromtimetodatetime(end_time1)
-        p2 = convertfromtimetodatetime(end_time2)
-        p3 = convertfromtimetodatetime(end_time3)
-        p4 = convertfromtimetodatetime(end_time4)
-        if ((cur_time_d - p1 <= time5) and (cur_time_d - p1 > time0)) or ((cur_time_d - p2 <= time5) and (cur_time_d - p2 > time0)) or ((cur_time_d - p3 <= time5) and (cur_time_d - p3 > time0)) or ((cur_time_d - p4 <= time5) and (cur_time_d - p4 > time0)):
-            print(str(i) + " Таксофон id : " + str(row[0]))
-            print()
-        # end_time2 = create_time_struct(time_hex[9],time_hex[10])
-        # p = convertfromtimetodatetime(end_time2)
-        # if (cur_time_d - p <= time5) and (cur_time_d - p > time0):
-        #     print(str(i) + " Таксофон id : " + str(row[0]) + " ;time call - " + create_time_string(end_time2))
-        #     print()
-        # end_time3 = create_time_struct(time_hex[15],time_hex[16])
-        # p = convertfromtimetodatetime(end_time3)
-        # if (cur_time_d - p <= time5) and (cur_time_d - p > time0):
-        #     print(str(i) + " Таксофон id : " + str(row[0]) + " ;time call - " + create_time_string(end_time3))
-        #     print()
-        # end_time4 = create_time_struct(time_hex[21],time_hex[22])
-        # p = convertfromtimetodatetime(end_time4)
-        # if (cur_time_d - p <= time5) and (cur_time_d - p > time0):
-        #     print(str(i) + " Таксофон id : " + str(row[0]) + " ;time call - " + create_time_string(end_time4))
-        #     print()
-        row = cur_ib.fetchone()
-        i = i + 1
+    logging.info( "Количество таксофонов для отработки : " + str(cur_ib.rowcount))
+    currern_procent = count_current_otzvon / cur_ib.rowcount * 100
+    logging.info( "Текущий процент отзвона : " + str('% 6.2f' % currern_procent) + " из запланированного : " + str(procent))
+    if currern_procent <= procent:
+        logging.info('Еще не достигли запланированного процента отзвона. Приступаем к "накрутки"')
+        i = 1
+        y = 0
+        logging.info("загружаем стоп-лист...")
+        stoplist = []
+        with open('Stoplist.csv', 'r') as f:
+            sl = csv.reader(f)
+            for r in sl:
+                stoplist.append(r[0])
+            logging.info("загрузили стоп-лист. в нем %s таксофонов" % len(stoplist))
 
+        logging.info("=" * 50)
+        while row:
+            #print(i, count_current_otzvon)
+            #print("статус отзвона - ", checktaksofonotzvon(row[0]))
+            #print(row[0] in stoplist)
+            time_hex = row[16]
+            phone_id = str(row[0])
+            end_time1 = create_time_struct(time_hex[3],time_hex[4])
+            end_time2 = create_time_struct(time_hex[9],time_hex[10])
+            end_time3 = create_time_struct(time_hex[15],time_hex[16])
+            end_time4 = create_time_struct(time_hex[21],time_hex[22])
+            p1 = convertfromtimetodatetime(end_time1)
+            p2 = convertfromtimetodatetime(end_time2)
+            p3 = convertfromtimetodatetime(end_time3)
+            p4 = convertfromtimetodatetime(end_time4)
+            if ((cur_time_d - p1 <= time5) and (cur_time_d - p1 > time0)) or ((cur_time_d - p2 <= time5) and (cur_time_d - p2 > time0)) or ((cur_time_d - p3 <= time5) and (cur_time_d - p3 > time0)) or ((cur_time_d - p4 <= time5) and (cur_time_d - p4 > time0)):
+                logging.info("  Таксофон id в текущем периоде: %4s" % row[0])
+                y += 1
+                logging.info("  проверяем таксофон на стоп-лист")
+                if phone_id in stoplist:
+                    logging.info("    Таксофон в стоп-листе. Пропускаем обработку. Статус отзвона - %s" % codotzvona(row[0]))
+                    pass
+                else:
+                    logging.info("    Таксофон не в стоп-листе.")
+                    if checktaksofonotzvon(row[0]):
+                        logging.info("    статус - Таксофон отзвонился. Код отзвона - %s" % codotzvona(row[0]))
+                        pass
+                    else:
+                        logging.info("    статус - Таксофон не отзвонился")
+                        slot = row[23]
+                        pass
+                    pass
+                print("Таксофон id : %4s" % row[0])
+                logging.info("-" * 50)
+            row = cur_ib.fetchone()
+            i = i + 1
+        if y > 0:
+            logging.info("Количество таксофонов в периоде : " + str(y))
+        else:
+            logging.info("Таксофонов нет в периоде")
+        pass
+    else:
+        logging.info('Достигли запланированного процента отзвона. Прекращаем работу.')
+        pass
 con_ib.close()
 con_stat.close()
