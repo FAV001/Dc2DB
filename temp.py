@@ -17,7 +17,7 @@ user = config['ServerDB']['user']
 userpass = config['ServerDB']['pass']
 list_lot = config['WorkConfig']['Lot']
 procent = float(config['WorkConfig']['Procent'])
-LogFile = config['WorkConfig']['LogName'] + cur_date.strftime("%d-%m-%Y") + ".log"
+LogFile = config['WorkConfig']['LogName'] + cur_date.strftime("%d-%m-%Y") + "temp.log"
 logging.basicConfig(format = u'[LINE:%(lineno)3d]# %(levelname)-8s [%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level = logging.DEBUG, filename = LogFile)
 #logging.basicConfig(format = u'[LINE:%(lineno)3d]# %(levelname)-8s [%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level = logging.INFO, filename = LogFile)
 logging.info(u'Запустили скрипт' )
@@ -62,7 +62,7 @@ for single_lot in list_lot:
         break
     
 lot = ', '.join(map(str,config['WorkConfig']['Lot']))
-logging.info(u'Соединяемся с базой...' )
+logging.info( u'Соединяемся с базой...' )
 con_stat = fdb.connect(host=server, database=db_stat, user=user, password=userpass)
 con_ib = fdb.connect(host=server, database=db_ib, user=user, password=userpass)
 cur_stat = con_stat.cursor()
@@ -97,7 +97,7 @@ def checktaksofonotzvon(phone_id):
             return 0
 
 def codotzvona(phone_id):
-    sql = "select * from allfails where phone_id = %s and (DATE_TIME > '%s 00:00' and DATE_TIME < '%s 23:59') and ((fail_code in (0,32,128)) and (fail_code not in (1,2,4)))" % (phone_id, s_cur_date, s_cur_date)       
+    sql = "select * from allfails where phone_id = %s and (DATE_TIME > '%s 00:00' and DATE_TIME < '%s 23:59') and ((fail_code in (0,32,128)) and (fail_code not in (1,2,4)))" % (phone_id, s_cur_date, s_cur_date)
     with cur_stat.execute(sql):
         r = cur_stat.fetchone()
         if r != None:
@@ -105,7 +105,6 @@ def codotzvona(phone_id):
             return r[2]
         else:
             return 1009
-        
 
 def current_count():
     con_ib1 = fdb.connect(host=server, database=db_ib, user=user, password=userpass)
@@ -121,9 +120,8 @@ def current_count():
     con_ib1.close()
     return count_current_otzvon
 
-
 cur_time_d = convertfromtimetodatetime(cur_time)
-count_current_otzvon = current_count()
+count_current_otzvon = 75
 logging.info( "Количество отзвонившихся таксофонов : " + str(count_current_otzvon))
 with cur_ib.execute(Select):
     row = cur_ib.fetchone()
@@ -157,63 +155,49 @@ with cur_ib.execute(Select):
             if ((cur_time_d - p1 <= time5) and (cur_time_d - p1 > time0)) or ((cur_time_d - p2 <= time5) and (cur_time_d - p2 > time0)) or ((cur_time_d - p3 <= time5) and (cur_time_d - p3 > time0)) or ((cur_time_d - p4 <= time5) and (cur_time_d - p4 > time0)):
                 logging.info("  Таксофон id в текущем периоде: %4s" % row[0])
                 y += 1
-                logging.info("  проверяем таксофон на стоп-лист")
-                if phone_id in stoplist:
-                    logging.info("    Таксофон в стоп-листе. Пропускаем обработку. Статус отзвона - %s" % codotzvona(row[0]))
+                #код формирования отзвона
+                slot = str(row[23]).zfill(2)
+                ver = row[29]
+                work_sam = row[28]
+                sql = "select first 1 BEFORE_ALLFAILS from ALLFAILS WHERE (BEFORE_ALLFAILS like '0x__%s' and REG_DATE_TIME > '%s 00:00') order by REG_DATE_TIME DESC" % (slot, s_cur_date)
+                with cur_stat.execute(sql):
+                    stat_row = cur_stat.fetchone()
+                    last_code = stat_row[0][2:4:]
+                    asDec = int(last_code,16)
+                    asDec += 1
+                    asHex = ('%X' % asDec).zfill(2)[:2]
+                    new_code = '0x%s%s' % (asHex, slot)
+                logging.warning("  sql для ALLFAILS")
+                logging.warning("       PHONE_ID=%s, BEFORE_ALLFAILS=%s, AFTER_ALLFAILS=%s, DATE_TIME='%s %s', REG_DATE_TIME='%s %s'" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
+                cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,1005,'%s','%s','%s %s','%s %s');" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
+                cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,0,'%s','%s','%s %s','%s %s');" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
+                if (work_sam != 1):
+                    logging.warning("       SAM отсутствует")
+                    cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,1073741827,'','00000000','%s %s','%s %s');\n" % (phone_id, s_cur_date, SAM_Date_Time_s, s_cur_date, SAM_Reg_Date_Time_s))
                     pass
-                else:
-                    logging.info("    Таксофон не в стоп-листе.")
-                    if checktaksofonotzvon(row[0]):
-                        logging.info("    статус - Таксофон отзвонился. Код отзвона - %s" % codotzvona(row[0]))
-                        pass
-                    else:
-                        logging.info("    статус - Таксофон не отзвонился")
-                        slot = row[23]
-                        #код формирования отзвона
-                        slot = str(row[23]).zfill(2)
-                        ver = row[29]
-                        work_sam = row[28]
-                        sql = "select first 1 BEFORE_ALLFAILS from ALLFAILS WHERE (BEFORE_ALLFAILS like '0x__%s' and REG_DATE_TIME > '%s 00:00') order by REG_DATE_TIME DESC" % (slot, s_cur_date)
-                        with cur_stat.execute(sql):
-                            stat_row = cur_stat.fetchone()
-                            last_code = stat_row[0][2:4:]
-                            asDec = int(last_code,16)
-                            asDec += 1
-                            asHex = ('%X' % asDec).zfill(2)[:2]
-                            new_code = '0x%s%s' % (asHex, slot)
-                        logging.warning("  sql для ALLFAILS")
-                        logging.warning("       PHONE_ID=%s, BEFORE_ALLFAILS=%s, AFTER_ALLFAILS=%s, DATE_TIME='%s %s', REG_DATE_TIME='%s %s'" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
-                        cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,1005,'%s','%s','%s %s','%s %s');" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
-                        cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,0,'%s','%s','%s %s','%s %s');" % (phone_id, new_code, ver, s_cur_date, Date_Time_s, s_cur_date, Reg_Date_Time_s))
-                        if (work_sam != 1):
-                            logging.warning("       SAM отсутствует")
-                            cur_stat.execute("insert into ALLFAILS (PHONE_TYPE, PHONE_ID, FAIL_CODE, BEFORE_ALLFAILS, AFTER_ALLFAILS, DATE_TIME, REG_DATE_TIME) Values (77,%s,1073741827,'','00000000','%s %s','%s %s');\n" % (phone_id, s_cur_date, SAM_Date_Time_s, s_cur_date, SAM_Reg_Date_Time_s))
-                            pass
-                        con_stat.commit()
-                        sql_update = """
-                            UPDATE PHONES SET 
-                            STATUS = 'Таксофон отзвонился',
-                            TIMECALL = '%s %s'
-                            WHERE (PHONE_ID = %s);""" % (s_cur_date, Reg_Date_Time_s, phone_id)
-                        logging.warning("sql для PHONES")
-                        logging.warning(sql_update)
-                        cur_ib_update.execute(sql_update)
-                        con_ib.commit()
-                        #изменяем переменные время
-                        rnd =  random.randrange(4, 15)
-                        logging.info("Смещение времени сек -> %s" % rnd)
-                        Date_Time = Date_Time + datetime.timedelta(seconds=rnd)
-                        Date_Time_s = Date_Time.strftime("%H:%M:%S")
-                        Reg_Date_Time = addsecond(Reg_Date_Time, rnd)
-                        Reg_Date_Time_s = Reg_Date_Time.strftime("%H:%M:%S")
-                        SAM_Date_Time = addsecond(Reg_Date_Time, -34)
-                        SAM_Date_Time_s = SAM_Date_Time.strftime("%H:%M:%S")
-                        SAM_Reg_Date_Time = addsecond(Reg_Date_Time, 1)
-                        SAM_Reg_Date_Time_s = SAM_Reg_Date_Time.strftime("%H:%M:%S")
-                        pass
-                    pass
+                con_stat.commit()
+                sql_update = """
+                    UPDATE PHONES SET 
+                      STATUS = 'Таксофон отзвонился',
+                      TIMECALL = '%s %s'
+                    WHERE (PHONE_ID = %s);""" % (s_cur_date, Reg_Date_Time_s, phone_id)
+                logging.warning("sql для PHONES")
+                logging.warning(sql_update)
+                cur_ib_update.execute(sql_update)
+                con_ib.commit()
                 print("Таксофон id : %4s" % row[0])
                 logging.info("-" * 50)
+                #изменяем переменные время
+                rnd =  random.randrange(4, 15)
+                logging.info("Смещение времени сек -> %s" % rnd)
+                Date_Time = Date_Time + datetime.timedelta(seconds=rnd)
+                Date_Time_s = Date_Time.strftime("%H:%M:%S")
+                Reg_Date_Time = addsecond(Reg_Date_Time, rnd)
+                Reg_Date_Time_s = Reg_Date_Time.strftime("%H:%M:%S")
+                SAM_Date_Time = addsecond(Reg_Date_Time, -34)
+                SAM_Date_Time_s = SAM_Date_Time.strftime("%H:%M:%S")
+                SAM_Reg_Date_Time = addsecond(Reg_Date_Time, 1)
+                SAM_Reg_Date_Time_s = SAM_Reg_Date_Time.strftime("%H:%M:%S")
             row = cur_ib.fetchone()
             i = i + 1
         if y > 0:
