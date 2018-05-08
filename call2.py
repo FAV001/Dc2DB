@@ -24,7 +24,7 @@ logging.basicConfig(format = u'[LINE:%(lineno)3d]# %(levelname)-8s [%(asctime)s]
 logging.info(u'Запустили скрипт' )
 timeDelay = random.randrange(0, 120)
 logging.info(u'Задержка для выполнения скрипта %s' % timeDelay )
-time.sleep(timeDelay)
+#time.sleep(timeDelay)
 startTime = datetime.datetime.now()
 
 logging.info(u'Формируем переменные')
@@ -177,7 +177,8 @@ with cur_ib.execute(Select):
                         logging.info("      слот - > %s" % slot)
                         ver = row[29]
                         work_sam = row[28]
-                        sql = "select first 1 BEFORE_ALLFAILS from ALLFAILS WHERE (BEFORE_ALLFAILS like '0x__%s' and REG_DATE_TIME > '%s 00:00') order by REG_DATE_TIME DESC" % (slot, s_cur_date)
+#                        sql = "select first 1 BEFORE_ALLFAILS from ALLFAILS WHERE (BEFORE_ALLFAILS like '0x__%s' and REG_DATE_TIME > '%s 00:00') order by REG_DATE_TIME DESC" % (slot, s_cur_date)
+                        sql = "select first 1 BEFORE_ALLFAILS from ALLFAILS WHERE (BEFORE_ALLFAILS like '0x__%s') order by REG_DATE_TIME DESC" % (slot)
                         with cur_stat.execute(sql):
                             stat_row = cur_stat.fetchone()
                             last_code = stat_row[0][2:4:]

@@ -55,6 +55,7 @@ for key in data:
         logging.info("=" * 80)
         logging.info("Phone_id -> %s" % key['PHONE_ID'])
         logging.info("time last call -> %s" % key['TIMECALL'])
+        logging.info("адрес установки -> %s" % key['ADDRESS'])
         logging.info("-" * 80)
 if (y != 0):
     logging.info(u"Отзваниваются %s таксофонов, и они не включены в контракт" % y)
