@@ -52,6 +52,7 @@ Select = "Select * from PHONES where LOT_NUMB in (%s) order by phone_id" % s_Lot
 #    PH.LINE_NUMB,
 
 sql = "SELECT PH.PHONE_ID,PH.RMS_TIME FROM PHONES PH WHERE LOT_NUMB in (%s) order by phone_id" % s_Lot
+#sql = "SELECT PH.PHONE_ID,PH.RMS_TIME FROM PHONES PH order by phone_id"
 cur_ib.execute(sql)
 desc = cur_ib.description
 column_names = [col[0] for col in desc]

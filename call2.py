@@ -7,10 +7,13 @@ import logging
 import csv
 import random
 import os
+import configparser
 
 cur_date = datetime.datetime.now()
 """читаем конфиг"""
 config = ConfigObj('call.cfg')
+runconf = configparser.ConfigParser()
+runconf.add_section("Result")
 server = config['ServerDB']['ServerName']
 db_stat = config['ServerDB']['DB_Stat']
 db_ib = config['ServerDB']['DB_IB']
@@ -47,6 +50,7 @@ SAM_Reg_Date_Time = cur_date + datetime.timedelta(seconds=1)
 SAM_Reg_Date_Time_s = SAM_Reg_Date_Time.strftime("%H:%M:%S")
 LogWork = os.getcwd() + "\\Log\\" + ("work-(%s).log" % s_cur_date)
 logging.info(u'Текущий временной интервал : %s' % CurrentPeriod_s) #str(cur_time.tm_hour) + ":" + str(cur_time.tm_min))
+runconf.set("Result", "Время обработки", CurrentPeriod_s)
 time5 = datetime.timedelta(minutes=5)
 time0 = datetime.timedelta(minutes=0)
 #print("current date ",cur_date)
@@ -127,11 +131,16 @@ def current_count():
 cur_time_d = convertfromtimetodatetime(cur_time)
 count_current_otzvon = current_count()
 logging.info( "Количество отзвонившихся таксофонов : " + str(count_current_otzvon))
+runconf.set("Result", "Количество отзвонившихся таксофонов", str(count_current_otzvon))
 update = False
 with cur_ib.execute(Select):
     row = cur_ib.fetchone()
     logging.info( "Количество таксофонов для отработки : " + str(cur_ib.rowcount))
+    runconf.set("Result", "Количество таксофонов для отработки", str(cur_ib.rowcount))
     currern_procent = count_current_otzvon / cur_ib.rowcount * 100
+    runconf.set("Result", "Текущий процент отзвона", str('% 6.2f' % currern_procent))
+    with open("result.ini", "w") as result_file:
+        runconf.write(result_file)
     logging.info( "Текущий процент отзвона : " + str('% 6.2f' % currern_procent) + " из запланированного : " + str(procent))
     if currern_procent <= procent:
         logging.info('Еще не достигли запланированного процента отзвона. Приступаем к "накрутки"')
