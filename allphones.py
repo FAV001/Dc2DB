@@ -44,7 +44,6 @@ def countallfais(phone_id):
 
 def codotzvona(phone_id):
     sql = "select * from allfails where phone_id = %s and (DATE_TIME > '%s 00:00' and DATE_TIME < '%s 23:59') and ((fail_code in (0,32,128)) and (fail_code not in (1,2,4)))" % (phone_id, s_cur_date, s_cur_date)       
-    
     with cur_stat.execute(sql):
         r = cur_stat.fetchone()
         if r != None:
